@@ -1,0 +1,116 @@
+---
+title: "Machine learning prediction"
+output: html_document
+---
+
+This is to project to do prediction of exercise by machine learning. The source is from http://groupware.les.inf.puc-rio.br/har.
+
+##The strategy 
+
+In order to do the prediction, we will have following steps:
+
+ * Data cleaning 
+ * Data splitting for train and test
+ * model selection
+ * Cross validation
+ * Prediction
+ 
+Let 's first have all necessary package ready.
+
+###package preparation
+
+During this step, we will install packages like caret, randomForest etc to make the project run smoothly.
+
+```{r,echo=FALSE,warning=FALSE,message=F}
+if(!getwd()=="C:/Users/song/Dropbox/Coursera/machine learning")
+  setwd("C:/Users/song/Dropbox/Coursera/machine learning")
+
+trainhtm <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv'
+testhtm <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv'
+
+desttrain <- "C:/Users/song/Dropbox/Coursera/machine learning/pml-training.csv"
+desttest <- "C:/Users/song/Dropbox/Coursera/machine learning/pml-testing.csv"
+
+if(!file.exists('C:/Users/song/Dropbox/Coursera/machine learning/pml-training.csv')) {download.file(trainhtm, desttrain)} 
+if(!file.exists('C:/Users/song/Dropbox/Coursera/machine learning/pml-testing.csv')) {download.file(testhtm, desttest)}
+ 
+testfull <- read.csv('pml-testing.csv',sep=',',header=T)
+trainfull <- read.csv('pml-training.csv',sep=',',header=T)
+library(caret)
+library(randomForest)
+library(e1071)
+library(gbm)
+library(rpart)
+
+```
+
+###Data cleaning and exploring
+
+Due to missing values of many variables as well as some variable won't be meaningful for the prediction, we drop those variables then we split our dataset to training and testing part. 
+
+```{r, echo=FALSE}
+#find those near zero variables
+nearzero <- nearZeroVar(testfull)
+traincut <- trainfull[,-nearzero]
+trainc <- traincut[,-which(names(traincut) %in%  c("X", "raw_timestamp_part_1","raw_timestamp_part_2","user_name","cvtd_timestamp","new_window","num_window"))]
+
+#create trial datasets
+trial <- createDataPartition(trainc$classe,p=0.75,list=F)
+trialdata <- trainc[trial,]
+trialtest <- trainc[-trial,]
+# reduce size to speed the run
+trial1 <- createDataPartition(trialdata$classe,p=0.20,list=F)
+trialp <- trialdata[trial1,] 
+trialpt <- trialdata[-trial1,] 
+```
+
+The distribution of the classes is shown as:
+
+```{r}
+histogram(trainc$classe,main='Distribution of class' )
+```
+
+###model building
+
+We first start to build our model usihng default setting and preProcess dataset to see the accuracy and change our mehtod to randomForest hope it will reduce the out of sample error rate.
+
+```{r,cache=TRUE,warning=FALSE}
+set.seed(825)
+control <- trainControl(method = "repeatedcv",number=5,repeats=5)
+modFit <- train(classe~.,data=trialp,preProcess='pca',prox=TRUE)
+modFit$finalModel
+predf <- predict(modFit,trialpt)
+confusionMatrix(trialpt$classe,predf)
+```
+
+If using the default setting, the accuracy is about 87% with 11.4% error rate. We expect that out of sample error rate will be lower if  we use random forest method:
+
+```{r,cache=TRUE,warning=FALSE}
+set.seed(825)
+rf <- randomForest(classe~.,data=trialp)
+plot(rf,main='Random Forest variable importance')
+#rf$finalModel
+varImpPlot(rf,main='Variable importance')
+predrf <- predict(rf,trialpt)
+confusionMatrix(trialpt$classe,predrf)
+```
+
+Since the error rate was dramatically reduce from 11.2% to 3.73%, so we are comfortable to apply the model to the remaining part of training datasets.
+
+###Cross validation
+
+Let's proceed to do cross validation using 5-fold and apply to large dataset.
+
+```{r,cache=TRUE,warning=FALSE}
+control <- trainControl(method = "repeatedcv",number=5,repeats=5)
+modrf <- train(classe~.,data=trialdata,method="rf",preProcess='pca',prox=TRUE)
+modrf$finalModel
+predfull <- predict(modrf,trailtest)
+confusionMatrix(trialtest)
+```
+
+After cross validation we know that the result is good so than we can proceed to next step.  
+
+##summary
+After we do model selection and cross validation, We chose a model that has high accuracy and smaller out of sample error rate. This model can be used to predict the unseen data,such as the test dataset provided for this project.
+
